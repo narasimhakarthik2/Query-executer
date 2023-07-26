@@ -1,0 +1,19 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+
+  build:
+    commands:
+      - echo build initiated on 'date'
+      - echo Build triggered by $(echo $CODEBUILD_WEBHOOK_TRIGGER)
+      - echo $CODEBUILD_WEBHOOK_TRIGGER | cut -d '/' -f 2
+      - export CODE_BRANCH=$(echo $CODEBUILD_WEBHOOK_TRIGGER | cut -d '/' -f 2)
+      - echo $CODE_BRANCH-deployment.zip
+      - gradle clean build
+artifacts:
+  files:
+    - '**/*'
+  name: $(echo $CODEBUILD_WEBHOOK_TRIGGER | cut -d '/' -f 2)-deployment.zip

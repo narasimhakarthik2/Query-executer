@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  QueryExecuter
+
+  Sample SAM Template for QueryExecuter
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 20
+
+Resources:
+  QueryExecuterFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: QueryExecuter
+      CodeUri: build/distributions/QueryExecuter.zip
+      Handler: serverless.Executer::handleRequest
+      Runtime: java11
+      Architectures:
+        - x86_64
+      MemorySize: 512
+      Environment:
+        Variables:
+          BucketName: !Ref AthenaQueryResultBucket
+      Tags:
+        RoleType: recptd
+      Events:
+        RateSchedule:
+          Type: Schedule
+          Properties:
+            Description: trigger lambda to pull new data from S3 & push into glue database
+            Enabled: true
+            Name: 2minDatalake
+            Schedule: rate(1 minute)
+
+  DatalakeBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'supersonic-telemetry-data-lake'
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags: [ {
+        Key: "RoleType",
+        Value: "recptd"
+      } ]
+    DeletionPolicy: Delete
+
+  AthenaQueryResultBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'supersonic-telemetry-query-results'
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags: [ {
+        Key: "RoleType",
+        Value: "recptd"
+      } ]
+    DeletionPolicy: Delete
+
+  AthenaDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: supersonic_telemetry_database
+        Description: Database to hold tables for Compliance-Orchestrator telemitry
+
+  InvoiceDetails:
+    DependsOn: AthenaDatabase
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: supersonic_telemetry_database
+      TableInput:
+        Name: invoice_details
+        TableType: EXTERNAL_TABLE
+        Parameters: {
+          "classification": "json"
+        }
+        StorageDescriptor:
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Columns:
+            - Name: organizationId
+              Type: string
+            - Name: country
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub 's3://${DatalakeBucket}/Invoice_details/'
+          SerdeInfo:
+            Parameters:
+              field.delim: ","
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
